@@ -5,7 +5,6 @@ namespace App\Services;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
 use GuzzleHttp\RequestOptions;
-use Illuminate\Support\Facades\Log;
 
 class HttpService
 {
@@ -176,77 +175,6 @@ class HttpService
     }
 
     /**
-     * 文件上传请求
-     *
-     * @param string $url
-     * @param array $files 文件数组，格式: ['file' => '/path/to/file']
-     * @param array $data 其他表单数据
-     * @param array $headers
-     * @return array
-     */
-    public function upload(string $url, array $files = [], array $data = [], array $headers = []): array
-    {
-        $resources = [];
-        
-        try {
-            $multipart = [];
-
-            // 添加文件
-            foreach ($files as $key => $file) {
-                if (!file_exists($file)) {
-                    throw new \InvalidArgumentException("文件不存在: {$file}");
-                }
-                
-                if (!is_readable($file)) {
-                    throw new \InvalidArgumentException("文件不可读: {$file}");
-                }
-                
-                $resource = fopen($file, 'r');
-                if ($resource === false) {
-                    throw new \RuntimeException("无法打开文件: {$file}");
-                }
-                
-                $resources[] = $resource; // 记录资源以便后续释放
-                
-                $multipart[] = [
-                    'name' => $key,
-                    'contents' => $resource,
-                    'filename' => basename($file),
-                ];
-            }
-
-            // 添加其他数据
-            foreach ($data as $key => $value) {
-                $multipart[] = [
-                    'name' => $key,
-                    'contents' => $value,
-                ];
-            }
-
-            $options = [
-                RequestOptions::MULTIPART => $multipart,
-                RequestOptions::HEADERS => array_merge([
-                    'Accept' => 'application/json',
-                ], $headers),
-            ];
-
-            $response = $this->client->post($url, $options);
-            $result = $this->handleResponse($response);
-
-            return $result;
-        } catch (GuzzleException $e) {
-            return $this->handleException($e, $url);
-        } finally {
-            // 确保所有文件句柄都被关闭
-            foreach ($resources as $resource) {
-                if (is_resource($resource)) {
-                    fclose($resource);
-                }
-            }
-        }
-    }
-
-    /**
      * 处理响应
      *
      * @param \Psr\Http\Message\ResponseInterface $response
@@ -289,7 +217,7 @@ class HttpService
      */
     protected function handleException(GuzzleException $e, string $url): array
     {
-        Log::error('HTTP Request Failed', [
+        logger_error('HTTP Request Failed', [
             'url' => $url,
             'message' => $e->getMessage(),
             'trace' => $e->getTraceAsString(),
@@ -349,9 +277,7 @@ class HttpService
      */
     public function setTimeout(int $seconds): self
     {
-        $this->client = new Client(array_merge($this->client->getConfig(), [
-            'timeout' => $seconds,
-        ]));
+        $this->defaultOptions[RequestOptions::TIMEOUT] = $seconds;
 
         return $this;
     }

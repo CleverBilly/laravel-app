@@ -15,18 +15,15 @@ class ExampleController extends Controller
 {
     protected HttpService $httpService;
     protected CacheService $cacheService;
-    protected QueueService $queueService;
     protected LogService $logService;
 
     public function __construct(
         HttpService $httpService,
         CacheService $cacheService,
-        QueueService $queueService,
         LogService $logService
     ) {
         $this->httpService = $httpService;
         $this->cacheService = $cacheService;
-        $this->queueService = $queueService;
         $this->logService = $logService;
     }
 
@@ -115,49 +112,73 @@ class ExampleController extends Controller
     }
 
     /**
-     * 队列服务示例
+     * 队列服务示例（Laravel 原生队列）
      *
      * @return \Illuminate\Http\JsonResponse
      */
     public function queueExample()
     {
-        // 示例 1: 推送单个消息
-        $messageId = queue_push([
-            'type' => 'email',
+        // 示例 1: 基本推送任务
+        \App\Jobs\SendEmailJob::dispatch([
             'to' => 'user@example.com',
             'subject' => 'Welcome',
             'body' => 'Hello World',
-        ], 'emails', 'redis');
+        ])->onQueue('emails');
 
-        // 示例 2: 延迟推送
-        $delayedId = queue_later([
-            'type' => 'notification',
-            'message' => 'Delayed message',
-        ], 30, 'notifications', 'redis');
+        // 示例 2: 延迟推送任务
+        \App\Jobs\ProcessOrderJob::dispatch(12345)
+            ->delay(now()->addSeconds(30))
+            ->onQueue('orders');
 
-        // 示例 3: 批量推送
-        $messages = [
-            ['id' => 1, 'action' => 'process'],
-            ['id' => 2, 'action' => 'process'],
-            ['id' => 3, 'action' => 'process'],
-        ];
-        $bulkIds = queue_bulk($messages, 'processing', 'redis');
+        // 示例 3: 指定连接（Redis 或 RabbitMQ）
+        \App\Jobs\SendEmailJob::dispatch([
+            'to' => 'admin@example.com',
+            'subject' => 'Test',
+        ])->onConnection('redis')->onQueue('emails');
 
-        // 示例 4: 获取队列大小
-        $emailQueueSize = queue_size('emails', 'redis');
+        // 示例 4: 批量推送多个任务
+        \App\Jobs\ProcessOrderJob::dispatch(101)->onQueue('orders');
+        \App\Jobs\ProcessOrderJob::dispatch(102)->onQueue('orders');
+        \App\Jobs\ProcessOrderJob::dispatch(103)->onQueue('orders');
+
+        // 示例 5: 任务链（按顺序执行）
+        \Illuminate\Support\Facades\Bus::chain([
+            new \App\Jobs\ProcessOrderJob(201),
+            new \App\Jobs\SendEmailJob(['to' => 'user@example.com', 'subject' => 'Order Processed']),
+        ])->onQueue('orders')->dispatch();
+
+        // 示例 6: 批处理（并行执行，可监控完成状态）
+        \Illuminate\Support\Facades\Bus::batch([
+            new \App\Jobs\ProcessOrderJob(301),
+            new \App\Jobs\ProcessOrderJob(302),
+            new \App\Jobs\ProcessOrderJob(303),
+        ])->name('Order Batch')->dispatch();
 
         return $this->success([
-            'demo' => '队列服务示例',
-            'message_id' => $messageId,
-            'delayed_id' => $delayedId,
-            'bulk_ids' => $bulkIds,
-            'queue_size' => $emailQueueSize,
-            'tips' => [
-                '支持 Redis 和 RabbitMQ 驱动',
-                '支持延迟消息和优先级',
-                '已修复资源泄漏问题',
+            'demo' => 'Laravel 原生队列示例',
+            'dispatched' => [
+                'SendEmailJob (emails queue)',
+                'ProcessOrderJob (delayed 30s)',
+                'SendEmailJob (redis connection)',
+                'ProcessOrderJob x3 (batch)',
+                'Chain: ProcessOrder → SendEmail',
+                'Batch: ProcessOrder x3',
             ],
-        ], '队列操作成功');
+            'features' => [
+                '✅ 使用 Laravel 标准 Job 类',
+                '✅ 支持 Redis 和 RabbitMQ 驱动',
+                '✅ 自动重试和失败处理',
+                '✅ 支持任务链和批处理',
+                '✅ 可使用 Horizon 监控',
+                '✅ 支持延迟任务和优先级队列',
+            ],
+            'commands' => [
+                'php artisan queue:work         # 启动 Worker',
+                'php artisan horizon             # 启动 Horizon（推荐）',
+                'php artisan queue:failed        # 查看失败任务',
+                'php artisan queue:retry all     # 重试失败任务',
+            ],
+        ], '队列任务已推送');
     }
 
     /**
@@ -346,12 +367,14 @@ class ExampleController extends Controller
             ];
         }, 300);
 
-        // 4. 推送异步任务到队列
-        queue_push([
+        // 4. 推送异步任务到队列（使用 Laravel 原生队列）
+        // 注意：实际项目中应该为每种业务创建专门的 Job 类
+        // 例如: UserActionJob::dispatch($userId, $action)->onQueue('user_actions');
+
+        logger_info('用户操作将被异步处理', [
             'user_id' => $userId,
             'action' => $action,
-            'timestamp' => now(),
-        ], 'user_actions', 'redis');
+        ], 'queue');
 
         // 5. 记录业务日志
         logger_business('用户操作', [

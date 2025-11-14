@@ -25,22 +25,6 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(\App\Services\CacheService::class, function ($app) {
             return new \App\Services\CacheService();
         });
-
-        // 注册队列管理器
-        $this->app->singleton(\App\Queue\QueueManager::class, function ($app) {
-            $queueConfig = config('queue', []);
-            $config = [
-                'default' => $queueConfig['driver'] ?? 'redis',
-                'drivers' => $queueConfig['driver_config'] ?? [],
-            ];
-            return new \App\Queue\QueueManager($config);
-        });
-
-        // 注册队列服务
-        $this->app->singleton(\App\Services\QueueService::class, function ($app) {
-            $manager = $app->make(\App\Queue\QueueManager::class);
-            return new \App\Services\QueueService($manager);
-        });
     }
 
     /**
@@ -48,6 +32,6 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        //
+
     }
 }

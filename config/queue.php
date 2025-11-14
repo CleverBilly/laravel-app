@@ -128,28 +128,74 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | 自定义队列驱动配置
+    | RabbitMQ Queue Connection
     |--------------------------------------------------------------------------
     |
-    | 这是自定义队列抽象层的配置，用于 QueueService
-    | 支持的驱动: redis, rabbitmq
+    | RabbitMQ 队列连接配置
+    | 使用 vladimir-yuldashev/laravel-queue-rabbitmq 包
+    | 文档: https://github.com/vyuldashev/laravel-queue-rabbitmq
     |
     */
-    'driver' => env('QUEUE_DRIVER', 'redis'),
 
-    'driver_config' => [
-        'redis' => [
-            'connection' => env('REDIS_QUEUE_CONNECTION', 'default'),
-            'prefix' => env('REDIS_QUEUE_PREFIX', 'queue:'),
+    'rabbitmq' => [
+        'driver' => 'rabbitmq',
+        'dsn' => env('RABBITMQ_DSN', null),
+
+        /*
+         * 可以通过 dsn 或独立参数配置
+         */
+        'factory_class' => PhpAmqpLib\Connection\AMQPStreamConnection::class,
+
+        'host' => env('RABBITMQ_HOST', 'localhost'),
+        'port' => env('RABBITMQ_PORT', 5672),
+        'vhost' => env('RABBITMQ_VHOST', '/'),
+        'login' => env('RABBITMQ_USER', 'guest'),
+        'password' => env('RABBITMQ_PASSWORD', 'guest'),
+        'queue' => env('RABBITMQ_QUEUE', 'default'),
+
+        'options' => [
+            'exchange' => [
+                'name' => env('RABBITMQ_EXCHANGE_NAME', 'laravel'),
+                'declare' => env('RABBITMQ_EXCHANGE_DECLARE', true),
+                'type' => env('RABBITMQ_EXCHANGE_TYPE', 'direct'), // direct, fanout, topic, headers
+                'passive' => env('RABBITMQ_EXCHANGE_PASSIVE', false),
+                'durable' => env('RABBITMQ_EXCHANGE_DURABLE', true),
+                'auto_delete' => env('RABBITMQ_EXCHANGE_AUTO_DELETE', false),
+                'alternate' => env('RABBITMQ_EXCHANGE_ALTERNATE', null),
+            ],
+
+            'queue' => [
+                'declare' => env('RABBITMQ_QUEUE_DECLARE', true),
+                'bind' => env('RABBITMQ_QUEUE_BIND', true),
+                'passive' => env('RABBITMQ_QUEUE_PASSIVE', false),
+                'durable' => env('RABBITMQ_QUEUE_DURABLE', true),
+                'exclusive' => env('RABBITMQ_QUEUE_EXCLUSIVE', false),
+                'auto_delete' => env('RABBITMQ_QUEUE_AUTO_DELETE', false),
+                'arguments' => env('RABBITMQ_QUEUE_ARGUMENTS'),
+            ],
         ],
 
-        'rabbitmq' => [
-            'host' => env('RABBITMQ_HOST', 'localhost'),
-            'port' => env('RABBITMQ_PORT', 5672),
-            'user' => env('RABBITMQ_USER', 'guest'),
-            'password' => env('RABBITMQ_PASSWORD', 'guest'),
-            'vhost' => env('RABBITMQ_VHOST', '/'),
+        /*
+         * 判断任务是否失败
+         */
+        'failed_job_classes' => [Throwable::class],
+
+        /*
+         * SSL 配置
+         */
+        'ssl' => env('RABBITMQ_SSL', false),
+        'ssl_options' => [
+            'cafile' => env('RABBITMQ_SSL_CAFILE', null),
+            'local_cert' => env('RABBITMQ_SSL_LOCALCERT', null),
+            'local_key' => env('RABBITMQ_SSL_LOCALKEY', null),
+            'verify_peer' => env('RABBITMQ_SSL_VERIFY_PEER', true),
+            'passphrase' => env('RABBITMQ_SSL_PASSPHRASE', null),
         ],
+
+        'retry_after' => (int) env('RABBITMQ_RETRY_AFTER', 90),
+        'worker' => env('RABBITMQ_WORKER', 'default'),
+
+        'after_commit' => false,
     ],
 
 ];
