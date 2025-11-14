@@ -152,7 +152,7 @@ class UserService
         $user->update($data);
 
         // 清除缓存
-        cache_delete("user:{$userId}");
+        cache()->forget("user:{$userId}");
 
         // 记录业务日志
         logger_business('更新用户信息', [
@@ -182,7 +182,7 @@ class UserService
         $result = $user->delete();
 
         // 清除缓存
-        cache_delete("user:{$userId}");
+        cache()->forget("user:{$userId}");
 
         // 记录业务日志
         logger_business('删除用户', [
@@ -254,11 +254,11 @@ class UserService
 
         // 批量清除缓存(循环删除)
         foreach ($userIds as $id) {
-            cache_delete("user:{$id}");
+            cache()->forget("user:{$id}");
         }
 
         // 清除统计缓存
-        cache_delete('stats:active_users');
+        cache()->forget('stats:active_users');
 
         // 记录业务日志
         logger_business('批量删除用户', [
