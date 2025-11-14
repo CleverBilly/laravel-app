@@ -3,30 +3,12 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Services\HttpService;
-use App\Services\CacheService;
-use App\Services\QueueService;
-use App\Services\LogService;
 use App\Rules\StrongPassword;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 
 class ExampleController extends Controller
 {
-    protected HttpService $httpService;
-    protected CacheService $cacheService;
-    protected LogService $logService;
-
-    public function __construct(
-        HttpService $httpService,
-        CacheService $cacheService,
-        LogService $logService
-    ) {
-        $this->httpService = $httpService;
-        $this->cacheService = $cacheService;
-        $this->logService = $logService;
-    }
-
     /**
      * 示例接口 - 基础响应
      *
@@ -46,21 +28,27 @@ class ExampleController extends Controller
     }
 
     /**
-     * HTTP 客户端示例
+     * HTTP 客户端示例（使用辅助函数）
      *
      * @return \Illuminate\Http\JsonResponse
      */
     public function httpExample()
     {
-        // GET 请求示例
-        $response = $this->httpService->get('https://api.github.com/repos/laravel/laravel', [
+        // GET 请求示例（使用辅助函数）
+        $response = http_get('https://api.github.com/repos/laravel/laravel', [
             'per_page' => 1,
         ]);
 
         return $this->success([
-            'demo' => 'HTTP 客户端请求示例',
+            'demo' => 'HTTP 客户端请求示例（使用辅助函数）',
             'method' => 'GET',
             'response' => $response,
+            'examples' => [
+                'GET' => 'http_get($url, $params, $headers)',
+                'POST' => 'http_post($url, $data, $headers)',
+                'PUT' => 'http_put($url, $data, $headers)',
+                'DELETE' => 'http_delete($url, $params, $headers)',
+            ],
         ], 'HTTP 请求成功');
     }
 
@@ -73,40 +61,44 @@ class ExampleController extends Controller
     {
         $key = 'demo_cache_key';
 
-        // 示例 1: 基础缓存操作
-        cache_set($key, ['data' => 'cached value', 'time' => now()], 60);
-        $cached = cache_get($key);
+        // 示例 1: 基础缓存操作（使用 Laravel 原生）
+        cache()->put($key, ['data' => 'cached value', 'time' => now()], 60);
+        $cached = cache()->get($key);
 
-        // 示例 2: Remember 模式
-        $data = cache_remember('demo_remember', function () {
+        // 示例 2: Remember 模式（Laravel 原生）
+        $data = cache()->remember('demo_remember', 300, function () {
             return ['computed' => true, 'value' => rand(1000, 9999)];
-        }, 300);
+        });
 
-        // 示例 3: 批量操作（优化版，使用 Redis Pipeline）
+        // 示例 3: 批量操作（使用 Redis Pipeline，性能提升 70%+）
         $batchData = [
             'key1' => 'value1',
             'key2' => 'value2',
             'key3' => 'value3',
         ];
-        $this->cacheService->setMultiple($batchData, 60);
-        $batchResult = $this->cacheService->getMultiple(['key1', 'key2', 'key3']);
+        cache_set_many($batchData, 60);
+        $batchResult = cache()->many(['key1', 'key2', 'key3']);
 
         // 示例 4: 防缓存穿透
-        $safeData = $this->cacheService->rememberSafe('demo_safe', function () {
+        $safeData = cache_remember_safe('demo_safe', function () {
             // 模拟可能返回 null 的查询
             return rand(0, 1) ? ['data' => 'exists'] : null;
         }, 60);
 
+        // 示例 5: 防缓存雪崩
+        cache_with_jitter('demo_jitter', ['data' => 'test'], 3600);
+
         return $this->success([
-            'demo' => '缓存服务示例',
+            'demo' => '缓存示例',
             'basic' => $cached,
             'remember' => $data,
             'batch' => $batchResult,
             'safe' => $safeData,
             'tips' => [
-                '批量操作使用 Redis Pipeline，性能提升 70%+',
-                'rememberSafe 可防止缓存穿透',
-                'setWithJitter 可防止缓存雪崩',
+                '基础操作直接使用 Laravel 原生 cache() 方法',
+                'cache_set_many() 使用 Redis Pipeline，性能提升 70%+',
+                'cache_remember_safe() 可防止缓存穿透',
+                'cache_with_jitter() 可防止缓存雪崩',
             ],
         ], '缓存操作成功');
     }
@@ -204,13 +196,8 @@ class ExampleController extends Controller
             'operation' => 'demo',
         ]);
 
-        // 示例 4: 使用服务类
-        $this->logService->info('通过服务类记录日志', [
-            'method' => 'service',
-        ], 'api');
-
         return $this->success([
-            'demo' => '日志服务示例',
+            'demo' => '日志示例',
             'logged_to' => [
                 'api.log',
                 'business.log',
@@ -357,7 +344,7 @@ class ExampleController extends Controller
 
         // 3. 检查缓存
         $cacheKey = "user_data_{$userId}";
-        $userData = cache_remember($cacheKey, function () use ($userId) {
+        $userData = cache()->remember($cacheKey, 300, function () use ($userId) {
             // 模拟数据库查询
             return [
                 'id' => $userId,
@@ -365,7 +352,7 @@ class ExampleController extends Controller
                 'email' => "user{$userId}@example.com",
                 'created_at' => now(),
             ];
-        }, 300);
+        });
 
         // 4. 推送异步任务到队列（使用 Laravel 原生队列）
         // 注意：实际项目中应该为每种业务创建专门的 Job 类
