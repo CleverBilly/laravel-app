@@ -10,7 +10,7 @@ use Tymon\JWTAuth\Exceptions\JWTException;
 use Tymon\JWTAuth\Exceptions\TokenExpiredException;
 use Tymon\JWTAuth\Exceptions\TokenInvalidException;
 
-class JwtAuth
+class JwtAuthMiddleware
 {
     /**
      * Handle an incoming request.
@@ -21,7 +21,7 @@ class JwtAuth
     {
         try {
             $user = JWTAuth::parseToken()->authenticate();
-            
+
             if (!$user) {
                 return api_error('用户不存在', 404);
             }

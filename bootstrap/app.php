@@ -13,10 +13,10 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
-            'jwt.auth' => \App\Http\Middleware\JwtAuth::class,
+            'jwt.auth' => \App\Http\Middleware\JwtAuthMiddleware::class,
             'request.log' => \App\Http\Middleware\RequestLog::class,
         ]);
-        
+
         // API 路由自动记录日志
         $middleware->api(prepend: [
             \App\Http\Middleware\RequestLog::class,
