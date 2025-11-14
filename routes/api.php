@@ -22,7 +22,7 @@ Route::prefix('v1')->group(function () {
     });
 
     // ==================== 示例路由 ====================
-    Route::prefix('examples')->group(function () {
+    Route::prefix('examples')->middleware('throttle:api')->group(function () {
         Route::get('/', [ExampleController::class, 'index'])->name('examples.index');
         Route::get('/http', [ExampleController::class, 'httpExample'])->name('examples.http');
         Route::get('/cache', [ExampleController::class, 'cacheExample'])->name('examples.cache');
@@ -36,12 +36,14 @@ Route::prefix('v1')->group(function () {
 
     // ==================== 认证路由 ====================
     Route::prefix('auth')->group(function () {
-        // 无需认证的路由
-        Route::post('/register', [AuthController::class, 'register'])->name('auth.register');
-        Route::post('/login', [AuthController::class, 'login'])->name('auth.login');
+        // 无需认证的路由(应用登录限流)
+        Route::middleware('throttle:auth')->group(function () {
+            Route::post('/register', [AuthController::class, 'register'])->name('auth.register');
+            Route::post('/login', [AuthController::class, 'login'])->name('auth.login');
+        });
 
-        // 需要认证的路由
-        Route::middleware(['jwt.auth'])->group(function () {
+        // 需要认证的路由(应用通用 API 限流)
+        Route::middleware(['jwt.auth', 'throttle:api'])->group(function () {
             Route::get('/me', [AuthController::class, 'me'])->name('auth.me');
             Route::post('/refresh', [AuthController::class, 'refresh'])->name('auth.refresh');
             Route::post('/logout', [AuthController::class, 'logout'])->name('auth.logout');
@@ -49,13 +51,15 @@ Route::prefix('v1')->group(function () {
     });
 
     // ==================== 你的业务路由 ====================
-    // 需要认证的业务路由
-    Route::middleware(['jwt.auth'])->group(function () {
+    // 需要认证的业务路由(应用通用 API 限流)
+    Route::middleware(['jwt.auth', 'throttle:api'])->group(function () {
         // 在这里添加你的业务路由
         // Route::apiResource('users', UserController::class);
         // Route::get('/profile', [ProfileController::class, 'show']);
     });
 
-    // 不需要认证的业务路由
-    // Route::get('/posts', [PostController::class, 'index']);
+    // 不需要认证的业务路由(应用全局限流)
+    // Route::middleware('throttle:global')->group(function () {
+    //     Route::get('/posts', [PostController::class, 'index']);
+    // });
 });

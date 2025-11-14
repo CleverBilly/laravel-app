@@ -77,8 +77,16 @@ php artisan view:clear                   # 清除视图缓存
 
 **控制器 -> 服务层 -> 模型** 的分层架构:
 - **Controller**: 精简的请求处理和响应,不包含业务逻辑
-- **Service**: 业务逻辑封装(虽然当前 app/Services/ 为空,但这是推荐的架构模式)
+- **Service**: 业务逻辑封装(参考 app/Services/UserService.php 示例)
 - **Model**: 数据访问层
+
+**服务层示例** (app/Services/UserService.php):
+展示了推荐的业务逻辑封装方式,包括:
+- 缓存策略: 单个/批量获取,自动缓存失效
+- 异常处理: 使用 throw_*_exception() 辅助函数
+- 日志记录: 业务日志、性能日志、安全日志
+- 数据验证: 业务规则校验
+- 复杂业务: 批量操作、统计计算等
 
 ### 关键目录结构
 
@@ -111,6 +119,9 @@ app/
 │   ├── ImageBase64.php     # Base64 图片验证
 │   ├── JsonString.php      # JSON 字符串验证
 │   └── DateRange.php       # 日期范围验证
+│
+├── Services/            # 业务服务类
+│   └── UserService.php  # 用户服务示例(展示最佳实践)
 │
 ├── Jobs/                # 队列任务
 └── Models/              # Eloquent 模型
@@ -206,12 +217,52 @@ array_to_tree($items, $id, $pid, $children)  # 数组转树形结构
 - 使用 **Laravel Horizon** 监控队列状态(仅支持 Redis)
 - 访问 `/horizon` 查看仪表盘
 
+**Horizon 访问控制** (app/Providers/HorizonServiceProvider.php):
+- **本地环境**: 允许所有访问
+- **测试环境**: 仅允许认证用户访问
+- **生产环境**:
+  - 方式1: IP 白名单 (配置 `HORIZON_ALLOWED_IPS` 环境变量)
+  - 方式2: 用户认证 + 角色检查
+  - 默认拒绝所有未授权访问
+- 建议生产环境配置 IP 白名单或实现基于角色的访问控制
+
+### API 限流
+
+已配置多级限流策略(app/Providers/AppServiceProvider.php):
+- **api**: 通用 API 限流,每分钟 60 次(按用户ID或IP)
+- **auth**: 登录/注册限流,每分钟 5 次(按IP,防暴力破解)
+- **global**: 全局限流,每分钟 120 次(按IP)
+- **strict**: 严格限流,每分钟 10 次(用于敏感操作)
+
+使用方式:
+```php
+// 在路由中应用限流
+Route::middleware('throttle:api')->group(function () {
+    // 你的路由
+});
+
+// 或单个路由
+Route::get('/users', [UserController::class, 'index'])
+    ->middleware('throttle:strict');
+```
+
+当请求超过限流时,返回 `429 Too Many Requests` 响应。
+
 ### 缓存策略
 
-优化的缓存服务(通过辅助函数使用):
-- **批量操作优化**: 使用 Redis Pipeline,性能提升 70%+
-- **防缓存穿透**: `cache_remember()` 自动处理 null 值
-- **防缓存雪崩**: 支持随机过期时间(jitter)
+优化的缓存辅助函数(app/Helpers/functions.php):
+- **批量操作优化**: `cache_set_many()` 使用 Redis Pipeline,性能提升 70%+
+- **防缓存穿透**: `cache_remember_safe()` 缓存 null 值防止频繁数据库查询
+- **防缓存雪崩**: `cache_with_jitter()` 添加随机过期时间
+
+基础缓存操作直接使用 Laravel 原生 API:
+```php
+cache()->get($key)
+cache()->put($key, $value, $ttl)
+cache()->remember($key, $ttl, $callback)
+cache()->forget($key)
+cache()->many($keys)  // 批量获取
+```
 
 ### 日志系统
 
@@ -272,7 +323,7 @@ array_to_tree($items, $id, $pid, $children)  # 数组转树形结构
 
 1. **N+1 查询优化**: 使用 `with()` 预加载关联
 2. **慢查询监控**: 超过阈值(默认 100ms)的查询会自动记录
-3. **批量缓存操作**: 使用 `cache_service()->setMultiple()` 等批量方法
+3. **批量缓存操作**: 使用 `cache_set_many()` 批量设置缓存(Redis Pipeline优化)
 4. **队列监控**: 使用 `php artisan queue:monitor` 监控队列积压
 5. **生产环境**: 必须执行配置缓存、路由缓存等优化命令
 
@@ -311,6 +362,9 @@ QUEUE_CONNECTION=redis|rabbitmq # 队列驱动(默认 redis)
 # JWT
 JWT_SECRET=                     # JWT 密钥(运行 php artisan jwt:secret 生成)
 JWT_TTL=60                      # Token 有效期(分钟)
+
+# Horizon(可选)
+HORIZON_ALLOWED_IPS=            # IP 白名单,多个IP用逗号分隔(例: 127.0.0.1,192.168.1.100)
 ```
 
 ## 常见问题
@@ -340,6 +394,7 @@ php artisan horizon           # 启动 Horizon(仅 Redis 队列)
 ```
 
 ### 5. 测试时如何模拟认证用户?
+
 ```php
 $user = User::factory()->create();
 $token = auth()->login($user);
@@ -347,9 +402,23 @@ $response = $this->withHeader('Authorization', 'Bearer ' . $token)
     ->getJson('/api/v1/auth/me');
 ```
 
+### 6. 如何配置 Horizon 访问控制?
+
+生产环境建议配置访问控制:
+
+**方式1: IP 白名单**(推荐)
+```bash
+# .env 文件
+HORIZON_ALLOWED_IPS=127.0.0.1,192.168.1.100
+```
+
+**方式2: 基于用户角色**
+编辑 `app/Providers/HorizonServiceProvider.php` 的 `gate()` 方法,取消注释并修改管理员邮箱列表或实现基于角色的检查。
+
 ## 参考资料
 
 - **示例代码**: app/Http/Controllers/Api/ExampleController.php (展示所有功能用法)
+- **示例服务**: app/Services/UserService.php (展示服务层最佳实践)
 - **README**: README.md (详细的功能文档和使用示例)
 - **辅助函数**: app/Helpers/functions.php (所有可用的辅助函数)
 - **路由定义**: routes/api.php (完整的路由结构)
