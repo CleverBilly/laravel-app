@@ -9,10 +9,11 @@
 - ✅ **全局异常处理** - 统一的异常处理和错误响应
 - ✅ **JWT 认证** - 完整的用户认证系统
 - ✅ **高性能缓存** - Redis Pipeline 优化，防穿透和雪崩
-- ✅ **队列抽象层** - 支持 Redis 和 RabbitMQ
+- ✅ **原生队列系统** - Laravel 原生队列，支持 Redis 和 RabbitMQ
 - ✅ **日志管理** - 多频道日志，自动脱敏
-- ✅ **HTTP 客户端** - 优化的 GuzzleHttp 封装
+- ✅ **HTTP 辅助函数** - 简洁的 Guzzle 辅助函数
 - ✅ **数据验证** - 增强的验证规则（含密码强度验证）
+- ✅ **接口限流** - 灵活的限流策略（全局/认证/严格）
 - ✅ **性能监控** - 慢查询检测、队列监控
 
 ## 🚀 快速开始
@@ -110,55 +111,68 @@ curl -X POST http://localhost:8000/api/v1/auth/logout \
 ### 2. 缓存服务
 
 ```php
-// 基础操作
-cache_set('key', 'value', 3600);
-$value = cache_get('key');
-cache_delete('key');
+// 基础操作（Laravel 原生）
+cache()->put('key', 'value', 3600);
+$value = cache()->get('key');
+cache()->forget('key');
 
-// Remember 模式
-$user = cache_remember("user:{$id}", function () use ($id) {
+// Remember 模式（Laravel 原生）
+$user = cache()->remember("user:{$id}", 3600, function () use ($id) {
     return User::findOrFail($id);
+});
+
+// 防缓存穿透（高级辅助函数）
+$data = cache_remember_safe("product:{$id}", function () use ($id) {
+    return Product::find($id); // 可能返回 null，会缓存特殊标记防止穿透
 }, 3600);
 
-// 防缓存穿透
-$data = cache_service()->rememberSafe("product:{$id}", function () use ($id) {
-    return Product::find($id); // 可能返回 null
-}, 3600);
-
-// 批量操作（优化版，性能提升 70%+）
+// 批量操作（使用 Redis Pipeline，性能提升 70%+）
 $data = [
     'key1' => 'value1',
     'key2' => 'value2',
     'key3' => 'value3',
 ];
-cache_service()->setMultiple($data, 3600);
-$cached = cache_service()->getMultiple(['key1', 'key2', 'key3']);
+cache_set_many($data, 3600);
+$cached = cache()->many(['key1', 'key2', 'key3']);
 
 // 防缓存雪崩（自动添加随机过期时间）
-cache_service()->setWithJitter('key', 'value', 3600);
+cache_with_jitter('key', 'value', 3600);
 ```
 
-### 3. 队列服务
+### 3. 队列服务（Laravel 原生）
 
 ```php
-// 推送消息
-queue_push(['type' => 'email', 'to' => 'user@example.com'], 'emails', 'redis');
+use App\Jobs\SendEmailJob;
+use App\Jobs\ProcessOrderJob;
+
+// 推送任务
+SendEmailJob::dispatch($emailData);
+
+// 指定队列
+SendEmailJob::dispatch($emailData)->onQueue('emails');
 
 // 延迟推送（60秒后）
-queue_later(['type' => 'notification'], 60, 'notifications', 'redis');
+SendEmailJob::dispatch($emailData)
+    ->onQueue('emails')
+    ->delay(now()->addSeconds(60));
 
-// 批量推送
-$messages = [
-    ['id' => 1, 'data' => 'value1'],
-    ['id' => 2, 'data' => 'value2'],
-];
-queue_bulk($messages, 'bulk_queue', 'redis');
+// 任务链（按顺序执行）
+Bus::chain([
+    new ProcessOrderJob($orderId),
+    new SendEmailJob($emailData),
+    new UpdateInventoryJob($productId),
+])->dispatch();
 
-// 获取队列大小
-$size = queue_size('emails', 'redis');
+// 批量任务
+Bus::batch([
+    new ProcessOrderJob(1),
+    new ProcessOrderJob(2),
+    new ProcessOrderJob(3),
+])->dispatch();
 
 // 监控队列（命令行）
 php artisan queue:monitor --threshold=1000 --queues=default,emails
+php artisan horizon  # 推荐使用 Horizon
 ```
 
 ### 4. 日志服务
@@ -192,31 +206,40 @@ try {
 ### 5. HTTP 客户端
 
 ```php
-$httpService = app(\App\Services\HttpService::class);
-
 // GET 请求
-$response = $httpService->get('https://api.example.com/users', [
+$response = http_get('https://api.example.com/users', [
     'page' => 1,
     'limit' => 10,
 ]);
 
 // POST 请求
-$response = $httpService->post('https://api.example.com/users', [
+$response = http_post('https://api.example.com/users', [
     'name' => 'John',
     'email' => 'john@example.com',
 ]);
 
 // PUT 请求
-$response = $httpService->put('https://api.example.com/users/1', [
+$response = http_put('https://api.example.com/users/1', [
     'name' => 'John Updated',
 ]);
 
-// 文件上传（已修复资源泄漏）
-$response = $httpService->upload('https://api.example.com/upload', [
-    'file' => '/path/to/file.pdf',
-], [
-    'description' => 'File description',
+// DELETE 请求
+$response = http_delete('https://api.example.com/users/1');
+
+// 高级用法（自定义选项）
+$response = http_request('POST', 'https://api.example.com/data', [
+    'json' => $data,
+    'headers' => ['X-Custom-Header' => 'value'],
+    'timeout' => 60,
 ]);
+
+// 响应格式
+// [
+//     'success' => true,
+//     'status_code' => 200,
+//     'data' => [...],
+//     'message' => '',
+// ]
 ```
 
 ### 6. 数据验证
@@ -243,7 +266,29 @@ $request->validate([
 // - DateRange: 日期范围验证
 ```
 
-### 7. 异常处理
+### 7. 接口限流
+
+```php
+// 在路由中使用限流中间件
+Route::middleware(['throttle:api'])->group(function () {
+    Route::get('/users', [UserController::class, 'index']);
+});
+
+// 使用不同的限流策略
+Route::post('/login', [AuthController::class, 'login'])
+    ->middleware('throttle:auth');  // 登录：每分钟 5 次
+
+Route::post('/sensitive', [DataController::class, 'update'])
+    ->middleware('throttle:strict'); // 敏感操作：每分钟 10 次
+
+// 可用的限流策略：
+// - api: 每分钟 60 次（通用 API）
+// - auth: 每分钟 5 次（登录/注册）
+// - global: 每分钟 120 次（全局）
+// - strict: 每分钟 10 次（敏感操作）
+```
+
+### 8. 异常处理
 
 ```php
 // 业务异常
@@ -261,10 +306,13 @@ throw_forbidden_exception('无权访问该资源');
 // 验证失败
 throw_validation_exception('验证失败', $validator);
 
+// 服务异常
+throw_service_exception('外部服务调用失败', 500);
+
 // 所有异常都会被全局处理器捕获并返回统一格式的 JSON 响应
 ```
 
-### 8. 辅助函数
+### 9. 辅助函数
 
 ```php
 // 字符串处理
@@ -338,13 +386,13 @@ example-app/
 │   │   ├── Middleware/        # 中间件
 │   │   ├── Requests/          # FormRequest 验证类
 │   │   └── Traits/            # Trait
+│   ├── Jobs/                  # 队列任务（Laravel 原生）
 │   ├── Models/                # Eloquent 模型
-│   ├── Queue/                 # 队列抽象层
+│   ├── Providers/             # 服务提供者
 │   ├── Rules/                 # 自定义验证规则
-│   └── Services/              # 业务服务类
+│   └── Services/              # 业务服务类（按需创建）
 ├── config/                    # 配置文件
 ├── database/                  # 数据库迁移和种子
-├── doc/                       # 详细文档
 ├── routes/                    # 路由定义
 ├── tests/                     # 测试文件
 └── README.md                  # 本文件
@@ -376,9 +424,16 @@ REDIS_PORT=6379
 REDIS_CACHE_DB=1
 REDIS_QUEUE_DB=2
 
-# 队列配置
+# 队列配置（支持 redis 和 rabbitmq）
 QUEUE_CONNECTION=redis
-QUEUE_DRIVER=redis
+
+# RabbitMQ 配置（可选）
+# QUEUE_CONNECTION=rabbitmq
+# RABBITMQ_HOST=127.0.0.1
+# RABBITMQ_PORT=5672
+# RABBITMQ_USER=guest
+# RABBITMQ_PASSWORD=guest
+# RABBITMQ_VHOST=/
 
 # JWT 配置
 JWT_SECRET=your-secret-key
@@ -426,11 +481,11 @@ php artisan test --coverage       # 生成覆盖率报告
 ### 已优化项
 
 - ✅ **批量缓存操作** - 使用 Redis Pipeline，性能提升 70%+
-- ✅ **防缓存穿透** - `rememberSafe()` 方法缓存 null 值
-- ✅ **防缓存雪崩** - `setWithJitter()` 添加随机过期时间
-- ✅ **资源泄漏修复** - HttpService 文件上传、RabbitMQ 消费者
+- ✅ **防缓存穿透** - `cache_remember_safe()` 缓存 null 值标记
+- ✅ **防缓存雪崩** - `cache_with_jitter()` 添加随机过期时间
+- ✅ **接口限流** - 灵活的限流策略，防止滥用
 - ✅ **慢查询监控** - 自动检测超过阈值的查询
-- ✅ **队列监控** - 实时监控队列积压
+- ✅ **队列监控** - 实时监控队列积压（Horizon）
 
 ### 性能指标
 
@@ -446,7 +501,8 @@ php artisan test --coverage       # 生成覆盖率报告
 - ✅ **密码强度验证** - 防止弱密码
 - ✅ **日志自动脱敏** - 敏感数据（password、token等）自动隐藏
 - ✅ **JWT 黑名单** - 登出后 token 立即失效
-- ✅ **资源泄漏修复** - 防止文件描述符和连接泄漏
+- ✅ **接口限流保护** - 防止暴力破解和 DDoS 攻击
+- ✅ **请求 ID 追踪** - 自动为每个请求生成唯一 ID，便于追踪
 
 ## 🚀 部署
 
@@ -503,13 +559,14 @@ php artisan test --coverage
 
 ## 💡 开发建议
 
-1. **控制器** - 保持精简，业务逻辑放在 Service 层
-2. **服务类** - 在 `app/Services/` 创建服务类封装业务逻辑
-3. **队列任务** - 耗时操作使用队列异步处理
-4. **缓存策略** - 合理使用缓存，注意缓存失效
-5. **日志记录** - 重要操作记录日志，便于排查问题
+1. **控制器** - 保持精简，业务逻辑放在 Service 层或 Job 中
+2. **服务类** - 按需创建，避免过度封装（优先使用 Laravel 原生能力）
+3. **队列任务** - 耗时操作使用 Job 类异步处理
+4. **缓存策略** - 优先使用 Laravel 原生缓存，复杂场景用高级辅助函数
+5. **日志记录** - 重要操作记录日志，使用 `logger_*` 辅助函数
 6. **异常处理** - 使用自定义异常，由全局处理器统一处理
-7. **代码规范** - 使用 Laravel Pint 格式化代码
+7. **接口限流** - 为敏感接口配置合理的限流策略
+8. **代码规范** - 使用 Laravel Pint 格式化代码
 
 ## 🤝 参与贡献
 
@@ -525,6 +582,7 @@ php artisan test --coverage
 - [JWT Auth](https://github.com/tymondesigns/jwt-auth)
 - [GuzzleHttp](https://docs.guzzlephp.org/)
 - [Laravel Horizon](https://laravel.com/docs/horizon)
+- [Laravel Queue RabbitMQ](https://github.com/vladimir-yuldashev/laravel-queue-rabbitmq)
 
 ---
 
