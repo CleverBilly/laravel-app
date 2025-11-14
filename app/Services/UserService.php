@@ -34,10 +34,10 @@ class UserService
     {
         $cacheKey = "user:{$userId}";
 
-        // 使用缓存辅助函数,自动处理缓存穿透
-        $user = cache_remember($cacheKey, function () use ($userId) {
+        // 使用 Laravel 原生缓存方法
+        $user = cache()->remember($cacheKey, self::CACHE_TTL, function () use ($userId) {
             return User::find($userId);
-        }, self::CACHE_TTL);
+        });
 
         if (!$user) {
             logger_warning('用户未找到', ['user_id' => $userId], 'business');
@@ -223,7 +223,7 @@ class UserService
     {
         $cacheKey = 'stats:active_users';
 
-        return cache_remember($cacheKey, function () {
+        return cache()->remember($cacheKey, 300, function () {
             $stats = [
                 'total' => User::count(),
                 'verified' => User::whereNotNull('email_verified_at')->count(),
@@ -233,7 +233,7 @@ class UserService
             logger_performance('计算用户统计', 0, $stats);
 
             return $stats;
-        }, 300); // 5分钟缓存
+        }); // 5分钟缓存
     }
 
     /**
